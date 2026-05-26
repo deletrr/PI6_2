@@ -1,0 +1,16 @@
+spring:
+  flyway:
+    enabled: false
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+
+security:
+  jwt:
+    secret: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
+    expiration-ms: 3600000
+
+mqtt:
+  broker-url: tcp://localhost:1883
+  client-id: test-backend
+  ca-cert-path: /dev/null

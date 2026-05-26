@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mosquitto
+  namespace: parquimetro
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mosquitto
+  template:
+    metadata:
+      labels:
+        app: mosquitto
+    spec:
+      containers:
+        - name: mosquitto
+          image: eclipse-mosquitto:2.0
+          ports:
+            - containerPort: 8883
+          volumeMounts:
+            - name: config
+              mountPath: /mosquitto/config
+              readOnly: true
+            - name: certs
+              mountPath: /mosquitto/certs
+              readOnly: true
+            - name: data
+              mountPath: /mosquitto/data
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+      volumes:
+        - name: config
+          configMap:
+            name: mosquitto-config
+        - name: certs
+          secret:
+            secretName: parquimetro-certs
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mosquitto-service
+  namespace: parquimetro
+spec:
+  selector:
+    app: mosquitto
+  ports:
+    - port: 8883
+      targetPort: 8883
+  type: LoadBalancer
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mosquitto-config
+  namespace: parquimetro
+data:
+  mosquitto.conf: |
+    listener 8883
+    protocol mqtt
+    cafile /mosquitto/certs/ca.crt
+    certfile /mosquitto/certs/server.crt
+    keyfile /mosquitto/certs/server.key
+    require_certificate true
+    use_identity_as_username true
+    allow_anonymous false
+    persistence true
+    persistence_location /mosquitto/data/
