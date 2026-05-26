@@ -1,4 +1,4 @@
-# Sistema Inteligente de Parquimetros V7
+# Sistema Inteligente de Parquimetros
 
 Sistema distribuido de gerenciamento de vagas de estacionamento, composto por hardware IoT (ESP32), backend Spring Boot, aplicativos mobile multiplataforma (KMP) e infraestrutura containerizada.
 
