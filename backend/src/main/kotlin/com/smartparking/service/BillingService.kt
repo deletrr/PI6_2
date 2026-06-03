@@ -1,0 +1,107 @@
+package com.smartparking.service
+
+import com.smartparking.config.ParkingRulesConfig
+import org.springframework.stereotype.Service
+import java.math.BigDecimal
+import java.time.DayOfWeek
+import java.time.LocalDateTime
+import java.time.temporal.ChronoUnit
+import kotlin.math.ceil
+
+@Service
+class BillingService(private val rules: ParkingRulesConfig) {
+
+    /**
+     * RN01 + RN02 + RN03
+     * Calcula o valor a cobrar dado o início e fim da sessão.
+     */
+    fun calculateCharge(startTime: LocalDateTime, endTime: LocalDateTime): BillingResult {
+        val totalMinutes = ChronoUnit.MINUTES.between(startTime, endTime)
+
+        // RN02 — tolerância gratuita
+        if (totalMinutes <= rules.freeToleranceMinutes) {
+            return BillingResult(
+                amountCharged = BigDecimal.ZERO,
+                chargedHours = 0,
+                billableMinutes = 0
+            )
+        }
+
+        // RN03 — calcular minutos faturáveis dentro do horário comercial
+        val billableMinutes = countBillableMinutes(startTime, endTime)
+
+        if (billableMinutes == 0L) {
+            return BillingResult(
+                amountCharged = BigDecimal.ZERO,
+                chargedHours = 0,
+                billableMinutes = 0
+            )
+        }
+
+        // RN01 — R$2,00/hora, fração integral
+        val hours = ceil(billableMinutes / 60.0).toInt()
+        val amount = rules.ratePerHour.multiply(BigDecimal(hours))
+
+        return BillingResult(
+            amountCharged = amount,
+            chargedHours = hours,
+            billableMinutes = billableMinutes
+        )
+    }
+
+    /**
+     * RN03 — conta minutos dentro do horário de cobrança:
+     *   Seg-Sex: 08:00–18:00
+     *   Sáb:     08:00–13:00
+     *   Dom e feriados: sem cobrança
+     */
+    private fun countBillableMinutes(start: LocalDateTime, end: LocalDateTime): Long {
+        var current = start
+        var billableMinutes = 0L
+
+        while (current.isBefore(end)) {
+            if (isChargeable(current)) billableMinutes++
+            current = current.plusMinutes(1)
+        }
+
+        return billableMinutes
+    }
+
+    private fun isChargeable(dateTime: LocalDateTime): Boolean {
+        val hour = dateTime.hour
+        val minute = dateTime.minute
+        val totalMinuteOfDay = hour * 60 + minute
+
+        return when (dateTime.dayOfWeek) {
+            DayOfWeek.MONDAY,
+            DayOfWeek.TUESDAY,
+            DayOfWeek.WEDNESDAY,
+            DayOfWeek.THURSDAY,
+            DayOfWeek.FRIDAY -> totalMinuteOfDay in (8 * 60)..(18 * 60 - 1)
+
+            DayOfWeek.SATURDAY -> totalMinuteOfDay in (8 * 60)..(13 * 60 - 1)
+
+            else -> false
+        }
+    }
+
+    /**
+     * Calcula estimativa de custo para uma sessão em andamento.
+     */
+    fun estimateCurrentCost(startTime: LocalDateTime): BigDecimal {
+        val now = LocalDateTime.now()
+        if (now.isBefore(startTime)) return BigDecimal.ZERO
+        return calculateCharge(startTime, now).amountCharged
+    }
+
+    fun isOvertimeExceeded(startTime: LocalDateTime): Boolean {
+        val elapsed = ChronoUnit.HOURS.between(startTime, LocalDateTime.now())
+        return elapsed >= rules.maxSessionHours
+    }
+}
+
+data class BillingResult(
+    val amountCharged: BigDecimal,
+    val chargedHours: Int,
+    val billableMinutes: Long
+)

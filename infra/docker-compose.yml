@@ -1,65 +1,38 @@
-version: "3.9"
+version: '3.8'
 
 services:
   postgres:
-    image: postgis/postgis:16-3.4
-    container_name: parquimetro-db
+    image: postgres:15-alpine
+    container_name: pontolivre_postgres
+    restart: unless-stopped
     environment:
-      POSTGRES_DB: parquimetro
-      POSTGRES_USER: parquimetro
-      POSTGRES_PASSWORD: parquimetro
+      POSTGRES_DB: ponto_livre
+      POSTGRES_USER: pontolivre_user
+      POSTGRES_PASSWORD: pontolivre_pass
     ports:
       - "5432:5432"
     volumes:
-      - pg_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/01_init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U parquimetro"]
+      test: ["CMD-SHELL", "pg_isready -U pontolivre_user -d ponto_livre"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   mosquitto:
-    image: eclipse-mosquitto:2.0
-    container_name: parquimetro-mqtt
+    image: eclipse-mosquitto:2
+    container_name: pontolivre_mosquitto
+    restart: unless-stopped
     ports:
-      - "8883:8883"
+      - "1883:1883"
+      - "9001:9001"
     volumes:
-      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-      - ./certs:/mosquitto/certs:ro
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
       - mosquitto_data:/mosquitto/data
-      - mosquitto_log:/mosquitto/log
-    healthcheck:
-      test: ["CMD", "mosquitto_sub", "-p", "8883", "-t", "$$SYS/#", "-C", "1", "--cafile", "/mosquitto/certs/ca.crt", "-i", "healthcheck"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: parquimetro-backend
-    depends_on:
-      postgres:
-        condition: service_healthy
-      mosquitto:
-        condition: service_healthy
-    environment:
-      DB_HOST: postgres
-      DB_USER: parquimetro
-      DB_PASS: parquimetro
-      JWT_SECRET: ${JWT_SECRET}
-      ADMIN_PASS: ${ADMIN_PASS}
-      MQTT_BROKER_URL: ssl://mosquitto:8883
-      MQTT_CA_CERT: /certs/ca.crt
-      MQTT_CLIENT_CERT: /certs/backend.crt
-      MQTT_CLIENT_KEY: /certs/backend.key
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./certs:/certs:ro
+      - mosquitto_logs:/mosquitto/log
 
 volumes:
-  pg_data:
+  postgres_data:
   mosquitto_data:
-  mosquitto_log:
+  mosquitto_logs:
