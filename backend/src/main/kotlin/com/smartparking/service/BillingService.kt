@@ -38,8 +38,16 @@ class BillingService(private val rules: ParkingRulesConfig) {
             )
         }
 
-        // RN01 — R$2,00/hora, fração integral
-        val hours = ceil(billableMinutes / 60.0).toInt()
+        // RN01 — R$2,00/hora, fração > 5min gera próxima hora cheia
+        val fullHours = (billableMinutes / 60).toInt()
+        val extraMinutes = billableMinutes % 60
+        
+        val hours = if (extraMinutes > 5) {
+            fullHours + 1
+        } else {
+            if (fullHours == 0) 1 else fullHours
+        }
+
         val amount = rules.ratePerHour.multiply(BigDecimal(hours))
 
         return BillingResult(

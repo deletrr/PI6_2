@@ -55,9 +55,17 @@ class BillingServiceTest {
     }
 
     @Test
-    fun `deve cobrar 2 horas para sessao de 61 minutos fracao integral`() {
+    fun `deve cobrar 1 hora para sessao de 65 minutos dentro da tolerancia de fracao`() {
         val start = LocalDateTime.of(2024, 6, 3, 10, 0)
-        val result = billingService.calculateCharge(start, start.plusMinutes(61))
+        val result = billingService.calculateCharge(start, start.plusMinutes(65))
+        assertEquals(BigDecimal("2.00"), result.amountCharged)
+        assertEquals(1, result.chargedHours)
+    }
+
+    @Test
+    fun `deve cobrar 2 horas para sessao de 66 minutos excedendo tolerancia de fracao`() {
+        val start = LocalDateTime.of(2024, 6, 3, 10, 0)
+        val result = billingService.calculateCharge(start, start.plusMinutes(66))
         assertEquals(BigDecimal("4.00"), result.amountCharged)
         assertEquals(2, result.chargedHours)
     }

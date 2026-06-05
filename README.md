@@ -137,3 +137,14 @@ Você pode testar o sistema completo mesmo sem um ESP32 físico, simulando mensa
 ---
 
 Para mais detalhes técnicos, consulte `infra/SETUP_INSTRUCTIONS.md`.
+
+
+Testes:
+
+
+```bash
+./gradlew :backend:test --tests "com.smartparking.service.BillingServiceTest"
+```
+```bash
+./gradlew :backend:test :backend:jacocoTestReport
+```
