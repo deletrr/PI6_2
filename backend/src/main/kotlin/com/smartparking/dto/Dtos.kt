@@ -309,6 +309,26 @@ data class DashboardResponse(
     val pendingFines: Long
 )
 
+// ── MQTT Logs ─────────────────────────────────────────────────────────────────
+
+data class MqttLogResponse(
+    val id: Long,
+    val topic: String,
+    val payload: String,
+    val meterCode: String?,
+    val processed: Boolean,
+    val createdAt: LocalDateTime
+)
+
+fun MqttLog.toResponse() = MqttLogResponse(
+    id = id,
+    topic = topic,
+    payload = payload,
+    meterCode = meterCode,
+    processed = processed,
+    createdAt = createdAt
+)
+
 // ── Pagination ────────────────────────────────────────────────────────────────
 
 data class PageResponse<T>(

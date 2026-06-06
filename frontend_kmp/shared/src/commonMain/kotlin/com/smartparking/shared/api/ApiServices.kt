@@ -167,3 +167,28 @@ object DashboardApi {
     suspend fun getDashboard(): ApiResult<DashboardModel> =
         ApiClient.httpClient.get("/api/admin/dashboard").toResult()
 }
+
+@kotlinx.serialization.Serializable
+data class ViaCepResponse(
+    val cep: String? = null,
+    val logradouro: String? = null,
+    val bairro: String? = null,
+    val localidade: String? = null,
+    val uf: String? = null,
+    val erro: Boolean? = null
+)
+
+object ExternalApi {
+    suspend fun searchCep(cep: String): ApiResult<ViaCepResponse> = try {
+        val cleanCep = cep.replace("-", "").replace(".", "").trim()
+        if (cleanCep.length != 8) ApiResult.Error("CEP inválido")
+        else {
+            val response = ApiClient.httpClient.get("https://viacep.com.br/ws/$cleanCep/json/")
+            val body = response.toResult<ViaCepResponse>()
+            if (body is ApiResult.Success && body.data.erro == true) ApiResult.Error("CEP não encontrado")
+            else body
+        }
+    } catch (e: Exception) {
+        ApiResult.Error("Falha ao buscar CEP: ${e.message}")
+    }
+}

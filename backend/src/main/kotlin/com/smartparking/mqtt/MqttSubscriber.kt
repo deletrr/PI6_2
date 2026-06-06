@@ -4,7 +4,6 @@ import com.smartparking.config.MqttProperties
 import com.smartparking.entity.MqttLog
 import com.smartparking.entity.ParkingStatus
 import com.smartparking.repository.MqttLogRepository
-import com.smartparking.repository.ParkingMeterRepository
 import com.smartparking.service.ParkingMeterService
 import com.smartparking.service.ParkingSessionService
 import org.eclipse.paho.client.mqttv3.*
@@ -21,7 +20,6 @@ class MqttSubscriber(
     private val mqttConnectOptions: MqttConnectOptions,
     private val meterService: ParkingMeterService,
     private val sessionService: ParkingSessionService,
-    private val meterRepository: ParkingMeterRepository,
     private val mqttLogRepository: MqttLogRepository,
     private val transactionTemplate: TransactionTemplate,
     private val properties: MqttProperties
@@ -31,78 +29,108 @@ class MqttSubscriber(
 
     @EventListener(ApplicationReadyEvent::class)
     fun connect() {
+        println(">>>> [MQTT HEARTBEAT] STARTUP INITIATED <<<<")
+        println(">>>> Broker: ${properties.brokerUrl}")
+        println(">>>> Topics: ${properties.topics}")
+
         mqttClient.setCallback(object : MqttCallbackExtended {
             override fun connectComplete(reconnect: Boolean, serverURI: String) {
-                log.info("MQTT conectado: $serverURI (reconexão=$reconnect)")
+                val msg = ">>>> [MQTT SUCCESS] CONECTADO AO BROKER: $serverURI"
+                println(msg)
+                log.info(msg)
                 subscribeToTopics()
             }
 
             override fun connectionLost(cause: Throwable) {
-                log.warn("MQTT desconectado: ${cause.message}")
+                val msg = ">>>> [MQTT ERROR] CONEXAO PERDIDA: ${cause.message}"
+                println(msg)
+                log.error(msg)
             }
 
             override fun messageArrived(topic: String, message: MqttMessage) {
                 val payload = String(message.payload, StandardCharsets.UTF_8).trim()
+                println(">>>> [MQTT MESSAGE] TOPICO: $topic | PAYLOAD: $payload")
                 handleMessage(topic, payload)
             }
 
             override fun deliveryComplete(token: IMqttDeliveryToken) {}
         })
 
-        runCatching {
-            mqttClient.connect(mqttConnectOptions)
-        }.onFailure {
-            log.error("Falha ao conectar ao broker MQTT: ${it.message}")
-        }
+        Thread {
+            while (true) {
+                if (!mqttClient.isConnected) {
+                    try {
+                        println(">>>> [MQTT] Tentando conectar em ${properties.brokerUrl}...")
+                        mqttClient.connect(mqttConnectOptions)
+                    } catch (e: Exception) {
+                        println(">>>> [MQTT] Falha na conexao: ${e.message}")
+                    }
+                }
+                Thread.sleep(10000)
+            }
+        }.start()
     }
 
     private fun subscribeToTopics() {
-        properties.topics.forEach { topic ->
-            runCatching {
+        val topicsToSubscribe = if (properties.topics.isEmpty()) listOf("parquimetro/+/status") else properties.topics
+        topicsToSubscribe.forEach { topic ->
+            try {
                 mqttClient.subscribe(topic, 1)
-                log.info("Inscrito no tópico MQTT: $topic")
-            }.onFailure {
-                log.error("Falha ao subscrever tópico $topic: ${it.message}")
+                println(">>>> [MQTT] Inscrito com sucesso no topico: $topic")
+            } catch (e: Exception) {
+                println(">>>> [MQTT] Erro ao inscrever no topico $topic: ${e.message}")
             }
         }
     }
 
-    // Wraps in a Spring transaction since this runs on the Paho thread
     private fun handleMessage(topic: String, payload: String) {
-        log.info("MQTT recebido [$topic]: $payload")
-
-        val meterCode = runCatching { topic.split("/")[1] }.getOrNull() ?: run {
-            log.warn("Tópico inválido: $topic")
-            return
-        }
-
-        transactionTemplate.execute {
-            val mqttLog = MqttLog(topic = topic, payload = payload, meterCode = meterCode)
-
-            when (payload.lowercase()) {
-                "ocupado" -> {
-                    meterService.updateStatus(meterCode, ParkingStatus.OCCUPIED)
-                    mqttLog.processed = true
-                }
-                "livre" -> {
-                    val meter = meterRepository.findByCode(meterCode).orElse(null)
-                    if (meter != null) {
-                        runCatching {
-                            sessionService.endSessionByMqtt(meter.id)
-                        }.onFailure {
-                            log.warn("Nenhuma sessão ativa para encerrar no parquímetro $meterCode: ${it.message}")
-                        }
-                        meterService.updateStatus(meterCode, ParkingStatus.FREE)
-                    }
-                    mqttLog.processed = true
-                }
-                else -> {
-                    log.warn("Payload desconhecido: $payload no tópico: $topic")
-                    mqttLog.processed = false
-                }
+        try {
+            val meterCode = topic.split("/").getOrNull(1) ?: run {
+                log.warn("Tópico inválido (esperado parquimetro/CODIGO/status): $topic")
+                return
             }
 
-            runCatching { mqttLogRepository.save(mqttLog) }
+            println(">>>> [MQTT MESSAGE] INICIANDO PROCESSAMENTO: $meterCode | PAYLOAD: $payload")
+
+            transactionTemplate.execute {
+                val mqttLog = MqttLog(topic = topic, payload = payload, meterCode = meterCode)
+                
+                val status = when(payload.lowercase().trim()) {
+                    "ocupado" -> ParkingStatus.OCCUPIED
+                    "livre" -> ParkingStatus.FREE
+                    else -> {
+                        println(">>>> [MQTT WARNING] Payload desconhecido ignorado: $payload")
+                        null
+                    }
+                }
+
+                if (status != null) {
+                    try {
+                        val meter = meterService.updateStatus(meterCode, status)
+                        println(">>>> [MQTT INFO] Parquímetro $meterCode atualizado para $status")
+                        
+                        if (status == ParkingStatus.FREE) {
+                            runCatching {
+                                sessionService.endSessionByMqtt(meter.id)
+                            }.onFailure {
+                                log.warn("Nenhuma sessão ativa para encerrar: ${it.message}")
+                            }
+                        }
+                        mqttLog.processed = true
+                    } catch (e: Exception) {
+                        println(">>>> [MQTT ERROR] Falha ao atualizar status no banco: ${e.message}")
+                        mqttLog.processed = false
+                    }
+                } else {
+                    mqttLog.processed = false
+                }
+
+                mqttLogRepository.save(mqttLog)
+                println(">>>> [MQTT SUCCESS] Log salvo no banco.")
+            }
+        } catch (e: Exception) {
+            println(">>>> [MQTT CRITICAL ERROR] Falha no handleMessage: ${e.message}")
+            e.printStackTrace()
         }
     }
 

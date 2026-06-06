@@ -124,7 +124,7 @@ class AdminMetersViewModel {
 
     fun createMeter(req: CreateParkingMeterRequest, onDone: () -> Unit) {
         scope.launch {
-            _state.value = _state.value.copy(isSaving = true)
+            _state.value = _state.value.copy(isSaving = true, error = null)
             when (val r = ParkingMeterApi.create(req)) {
                 is ApiResult.Success -> {
                     _state.value = _state.value.copy(isSaving = false, successMessage = "Parquímetro criado.")
@@ -132,6 +132,32 @@ class AdminMetersViewModel {
                     onDone()
                 }
                 is ApiResult.Error -> _state.value = _state.value.copy(isSaving = false, error = r.message)
+            }
+        }
+    }
+
+    fun updateMeter(id: String, req: UpdateParkingMeterRequest, onDone: () -> Unit) {
+        scope.launch {
+            _state.value = _state.value.copy(isSaving = true, error = null)
+            when (val r = ParkingMeterApi.update(id, req)) {
+                is ApiResult.Success -> {
+                    _state.value = _state.value.copy(isSaving = false, successMessage = "Parquímetro atualizado.")
+                    load()
+                    onDone()
+                }
+                is ApiResult.Error -> _state.value = _state.value.copy(isSaving = false, error = r.message)
+            }
+        }
+    }
+
+    fun searchAddress(cep: String, onResult: (String) -> Unit) {
+        scope.launch {
+            when (val r = ExternalApi.searchCep(cep)) {
+                is ApiResult.Success -> {
+                    val addr = "${r.data.logradouro}, ${r.data.bairro}, ${r.data.localidade}-${r.data.uf}"
+                    onResult(addr)
+                }
+                is ApiResult.Error -> _state.value = _state.value.copy(error = r.message)
             }
         }
     }

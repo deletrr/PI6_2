@@ -90,16 +90,31 @@ class ParkingMeterService(
     fun delete(id: UUID) {
         val meter = meterRepository.findById(id)
             .orElseThrow { NoSuchElementException("Parquímetro não encontrado.") }
-        meter.active = false
-        meterRepository.save(meter)
+        
+        // Se houver sessões vinculadas, apenas desativa. Caso contrário, deleta.
+        // Aqui assumimos que se o usuário quer "excluir", ele quer sumir com o registro.
+        try {
+            meterRepository.delete(meter)
+        } catch (e: Exception) {
+            meter.active = false
+            meterRepository.save(meter)
+        }
     }
 
     @Transactional
-    fun updateStatus(code: String, newStatus: ParkingStatus) {
-        val meter = meterRepository.findByCode(code).orElse(null) ?: return
+    fun updateStatus(code: String, newStatus: ParkingStatus): ParkingMeter {
+        val meter = meterRepository.findByCode(code).orElseGet {
+            ParkingMeter(
+                code = code.uppercase().trim(),
+                mqttTopic = "parquimetro/${code.uppercase().trim()}/status",
+                orphan = true,
+                status = newStatus
+            )
+        }
         meter.status = newStatus
         meter.lastSeen = LocalDateTime.now()
-        meterRepository.save(meter)
-        messagingTemplate.convertAndSend("/topic/meters", meter.toResponse())
+        val saved = meterRepository.save(meter)
+        messagingTemplate.convertAndSend("/topic/meters", saved.toResponse())
+        return saved
     }
 }

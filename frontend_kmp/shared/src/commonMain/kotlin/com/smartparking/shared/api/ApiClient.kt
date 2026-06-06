@@ -20,6 +20,8 @@ const val BASE_URL = "http://10.0.2.2:8080"
 expect object TokenStorage {
     fun getToken(): String?
     fun setToken(token: String?)
+    fun getUserJson(): String?
+    fun setUserJson(json: String?)
     fun clear()
 }
 

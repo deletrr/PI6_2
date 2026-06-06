@@ -34,10 +34,10 @@
 
 // ── Temporização ──────────────────────────────────────────────────────────────
 // Tempo contínuo vazio antes de publicar "Livre" (ms) — RN ESP32
-#define FREE_CONFIRM_MS         15000UL   // 15 segundos
+#define FREE_CONFIRM_MS         2000UL    // Reduzido para 2 segundos para teste rápido
 
 // Intervalo mínimo entre publicações do mesmo status (ms)
-#define PUBLISH_DEBOUNCE_MS     2000UL
+#define PUBLISH_DEBOUNCE_MS     1000UL    // Reduzido para 1 segundo
 
 // Intervalo de leitura do sensor (ms) — sem delay() no loop
 #define SENSOR_READ_INTERVAL_MS 200UL

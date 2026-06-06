@@ -20,7 +20,7 @@ interface ParkingMeterRepository : JpaRepository<ParkingMeter, UUID> {
     fun countByOrphan(orphan: Boolean): Long
     fun existsByCode(code: String): Boolean
 
-    @Query("SELECT m FROM ParkingMeter m WHERE " +
+    @Query("SELECT m FROM ParkingMeter m WHERE m.active = true AND " +
            "(:search IS NULL OR LOWER(m.code) LIKE :search " +
            "OR LOWER(m.description) LIKE :search)")
     fun searchMeters(search: String?, pageable: Pageable): Page<ParkingMeter>

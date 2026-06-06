@@ -57,6 +57,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         initTokenStorage(applicationContext)
+        AppSession.init()
         setContent {
             PontoLivreTheme {
                 PontoLivreApp(onScanQr = { cb -> requestQrScan(cb) })
@@ -69,9 +70,11 @@ class MainActivity : ComponentActivity() {
 fun PontoLivreApp(onScanQr: ((String) -> Unit) -> Unit) {
     val navController = rememberNavController()
 
-    val startDestination = if (AppSession.isLoggedIn)
-        if (AppSession.isAdmin) Screen.AdminDashboard.route else Screen.Home.route
-    else Screen.Login.route
+    val startDestination = remember {
+        if (AppSession.isLoggedIn)
+            if (AppSession.isAdmin) Screen.AdminDashboard.route else Screen.Home.route
+        else Screen.Login.route
+    }
 
     // Shared ViewModels
     val sessionVm       = remember { SessionViewModel() }

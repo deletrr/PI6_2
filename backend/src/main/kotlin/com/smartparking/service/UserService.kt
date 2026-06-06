@@ -65,7 +65,11 @@ class UserService(
     @Transactional
     fun deleteUser(id: UUID) {
         val user = userRepository.findById(id).orElseThrow { NoSuchElementException("Usuário não encontrado.") }
-        user.active = false
-        userRepository.save(user)
+        try {
+            userRepository.delete(user)
+        } catch (e: Exception) {
+            user.active = false
+            userRepository.save(user)
+        }
     }
 }

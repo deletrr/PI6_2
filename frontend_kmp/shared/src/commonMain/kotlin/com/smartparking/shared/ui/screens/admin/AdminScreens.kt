@@ -269,6 +269,7 @@ private fun AdminEditUserDialog(
 ) {
     var balance by remember { mutableStateOf(user.balance.toString()) }
     var active by remember { mutableStateOf(user.active) }
+    var role by remember { mutableStateOf(user.role) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
     AlertDialog(
@@ -281,6 +282,13 @@ private fun AdminEditUserDialog(
                 OutlinedTextField(value = balance, onValueChange = { balance = it },
                     label = { Text("Saldo (R$)") }, modifier = Modifier.fillMaxWidth(),
                     singleLine = true)
+                
+                Text("Perfil", style = MaterialTheme.typography.labelSmall)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = role == "USER", onClick = { role = "USER" }, label = { Text("USER") })
+                    FilterChip(selected = role == "ADMIN", onClick = { role = "ADMIN" }, label = { Text("ADMIN") })
+                }
+
                 Row(verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
                     modifier = Modifier.fillMaxWidth()) {
@@ -291,15 +299,18 @@ private fun AdminEditUserDialog(
         },
         confirmButton = {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { showDeleteConfirm = true },
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = ErrorRed)) {
-                    Text("Desativar")
+                TextButton(onClick = onDelete, colors = ButtonDefaults.textButtonColors(contentColor = ErrorRed)) {
+                    Text("Excluir Permanente")
                 }
                 Button(
-                    onClick = { onSave(AdminUpdateUserRequest(
-                        active = active,
-                        balance = balance.toDoubleOrNull()
-                    )) },
+                    onClick = { 
+                        val balanceDouble = balance.toDoubleOrNull() ?: 0.0
+                        onSave(AdminUpdateUserRequest(
+                            active = active,
+                            balance = balanceDouble,
+                            role = role
+                        )) 
+                    },
                     enabled = !isSaving
                 ) { Text("Salvar") }
             }
@@ -324,10 +335,7 @@ private fun AdminEditUserDialog(
 fun AdminMetersScreen(viewModel: AdminMetersViewModel, onNavigateUp: () -> Unit) {
     val state by viewModel.state.collectAsState()
     var showCreate by remember { mutableStateOf(false) }
-    var newCode by remember { mutableStateOf("") }
-    var newDesc by remember { mutableStateOf("") }
-    var newLat by remember { mutableStateOf("") }
-    var newLng by remember { mutableStateOf("") }
+    var editingMeter by remember { mutableStateOf<ParkingMeterModel?>(null) }
 
     LaunchedEffect(Unit) { viewModel.load() }
 
@@ -351,7 +359,8 @@ fun AdminMetersScreen(viewModel: AdminMetersViewModel, onNavigateUp: () -> Unit)
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(state.meters) { meter ->
-                    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                    Card(Modifier.fillMaxWidth().clickable { editingMeter = meter },
+                        shape = RoundedCornerShape(12.dp)) {
                         Row(Modifier.fillMaxWidth().padding(16.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically) {
@@ -394,43 +403,129 @@ fun AdminMetersScreen(viewModel: AdminMetersViewModel, onNavigateUp: () -> Unit)
     }
 
     if (showCreate) {
-        AlertDialog(
-            onDismissRequest = { showCreate = false },
-            title = { Text("Novo parquímetro") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(value = newCode, onValueChange = { newCode = it.uppercase() },
-                        label = { Text("Código *") }, placeholder = { Text("PKM-006") },
-                        modifier = Modifier.fillMaxWidth(), singleLine = true)
-                    OutlinedTextField(value = newDesc, onValueChange = { newDesc = it },
-                        label = { Text("Descrição") }, modifier = Modifier.fillMaxWidth(),
-                        singleLine = true)
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(value = newLat, onValueChange = { newLat = it },
-                            label = { Text("Latitude") }, modifier = Modifier.weight(1f),
-                            singleLine = true)
-                        OutlinedTextField(value = newLng, onValueChange = { newLng = it },
-                            label = { Text("Longitude") }, modifier = Modifier.weight(1f),
-                            singleLine = true)
-                    }
-                    state.error?.let { ErrorMessage(it) }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        viewModel.createMeter(CreateParkingMeterRequest(
-                            code = newCode, description = newDesc.ifBlank { null },
-                            latitude = newLat.toDoubleOrNull(),
-                            longitude = newLng.toDoubleOrNull()
-                        )) { showCreate = false; newCode = ""; newDesc = ""; newLat = ""; newLng = "" }
-                    },
-                    enabled = newCode.isNotBlank() && !state.isSaving
-                ) { Text("Criar") }
-            },
-            dismissButton = { OutlinedButton(onClick = { showCreate = false }) { Text("Cancelar") } }
+        MeterRegistrationDialog(
+            isSaving = state.isSaving,
+            onSearchCep = { cep, onResult -> viewModel.searchAddress(cep, onResult) },
+            onSave = { req -> viewModel.createMeter(req) { showCreate = false } },
+            onDismiss = { showCreate = false }
         )
     }
+
+    editingMeter?.let { meter ->
+        AdminEditMeterDialog(
+            meter = meter,
+            isSaving = state.isSaving,
+            onSave = { req -> viewModel.updateMeter(meter.id, req) { editingMeter = null } },
+            onDelete = { viewModel.deleteMeter(meter.id); editingMeter = null },
+            onDismiss = { editingMeter = null }
+        )
+    }
+}
+
+@Composable
+fun MeterRegistrationDialog(
+    isSaving: Boolean,
+    onSearchCep: (String, (String) -> Unit) -> Unit,
+    onSave: (CreateParkingMeterRequest) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var code by remember { mutableStateOf("") }
+    var cep by remember { mutableStateOf("") }
+    var address by remember { mutableStateOf("") }
+    var number by remember { mutableStateOf("") }
+    var lat by remember { mutableStateOf("") }
+    var lng by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Novo Parquímetro") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(value = code, onValueChange = { code = it.uppercase() },
+                    label = { Text("Código * (ex: PKM-001)") }, modifier = Modifier.fillMaxWidth())
+
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(value = cep, onValueChange = { cep = it },
+                        label = { Text("CEP") }, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { onSearchCep(cep) { address = it } }) {
+                        Icon(Icons.Default.Search, "Buscar")
+                    }
+                }
+
+                OutlinedTextField(value = address, onValueChange = { address = it },
+                    label = { Text("Endereço / Descrição") }, modifier = Modifier.fillMaxWidth())
+
+                OutlinedTextField(value = number, onValueChange = { number = it },
+                    label = { Text("Número") }, modifier = Modifier.fillMaxWidth())
+
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(value = lat, onValueChange = { lat = it },
+                        label = { Text("Lat") }, modifier = Modifier.weight(1f))
+                    OutlinedTextField(value = lng, onValueChange = { lng = it },
+                        label = { Text("Lng") }, modifier = Modifier.weight(1f))
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                val finalDesc = if (number.isNotBlank()) "$address, $number" else address
+                onSave(CreateParkingMeterRequest(
+                    code = code, description = finalDesc,
+                    latitude = lat.toDoubleOrNull(), longitude = lng.toDoubleOrNull()
+                ))
+            }, enabled = code.isNotBlank() && !isSaving) { Text("Criar") }
+        },
+        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Cancelar") } }
+    )
+}
+
+@Composable
+fun AdminEditMeterDialog(
+    meter: ParkingMeterModel,
+    isSaving: Boolean,
+    onSave: (UpdateParkingMeterRequest) -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var desc by remember { mutableStateOf(meter.description ?: "") }
+    var lat by remember { mutableStateOf(meter.latitude?.toString() ?: "") }
+    var lng by remember { mutableStateOf(meter.longitude?.toString() ?: "") }
+    var active by remember { mutableStateOf(meter.active) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Editar ${meter.code}") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(value = desc, onValueChange = { desc = it },
+                    label = { Text("Descrição") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = lat, onValueChange = { lat = it },
+                    label = { Text("Latitude") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = lng, onValueChange = { lng = it },
+                    label = { Text("Longitude") }, modifier = Modifier.fillMaxWidth())
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                    Text("Ativo")
+                    Switch(checked = active, onCheckedChange = { active = it })
+                }
+            }
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onDelete, colors = ButtonDefaults.textButtonColors(contentColor = ErrorRed)) {
+                    Text("Excluir")
+                }
+                Button(onClick = {
+                    onSave(UpdateParkingMeterRequest(
+                        description = desc, latitude = lat.toDoubleOrNull(),
+                        longitude = lng.toDoubleOrNull(), active = active
+                    ))
+                }, enabled = !isSaving) { Text("Salvar") }
+            }
+        },
+        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Cancelar") } }
+    )
 }
 
 // ── AdminOrphansScreen ────────────────────────────────────────────────────────
@@ -442,6 +537,7 @@ fun AdminOrphansScreen(viewModel: AdminMetersViewModel, onNavigateUp: () -> Unit
     var lat by remember { mutableStateOf("") }
     var lng by remember { mutableStateOf("") }
     var desc by remember { mutableStateOf("") }
+    var cep by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) { viewModel.load() }
 
@@ -468,7 +564,11 @@ fun AdminOrphansScreen(viewModel: AdminMetersViewModel, onNavigateUp: () -> Unit
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(state.orphans) { meter ->
                         Card(Modifier.fillMaxWidth().clickable {
-                            selected = meter; lat = ""; lng = ""; desc = meter.description ?: ""
+                            selected = meter
+                            lat = ""
+                            lng = ""
+                            desc = meter.description ?: ""
+                            cep = ""
                         }, shape = RoundedCornerShape(12.dp),
                             border = CardDefaults.outlinedCardBorder()) {
                             Row(Modifier.fillMaxWidth().padding(16.dp),
@@ -499,15 +599,29 @@ fun AdminOrphansScreen(viewModel: AdminMetersViewModel, onNavigateUp: () -> Unit
                     Text("Defina as coordenadas para exibir este parquímetro no mapa.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(value = cep, onValueChange = { cep = it },
+                            label = { Text("CEP") }, modifier = Modifier.weight(1f),
+                            singleLine = true)
+                        IconButton(onClick = { viewModel.searchAddress(cep) { desc = it } }) {
+                            Icon(Icons.Default.Search, "Buscar")
+                        }
+                    }
+
                     OutlinedTextField(value = desc, onValueChange = { desc = it },
                         label = { Text("Descrição / Endereço") },
                         modifier = Modifier.fillMaxWidth(), singleLine = true)
-                    OutlinedTextField(value = lat, onValueChange = { lat = it },
-                        label = { Text("Latitude *") }, placeholder = { Text("-23.5505") },
-                        modifier = Modifier.fillMaxWidth(), singleLine = true)
-                    OutlinedTextField(value = lng, onValueChange = { lng = it },
-                        label = { Text("Longitude *") }, placeholder = { Text("-46.6333") },
-                        modifier = Modifier.fillMaxWidth(), singleLine = true)
+                    
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(value = lat, onValueChange = { lat = it },
+                            label = { Text("Latitude *") }, placeholder = { Text("-23.5505") },
+                            modifier = Modifier.weight(1f), singleLine = true)
+                        OutlinedTextField(value = lng, onValueChange = { lng = it },
+                            label = { Text("Longitude *") }, placeholder = { Text("-46.6333") },
+                            modifier = Modifier.weight(1f), singleLine = true)
+                    }
                 }
             },
             confirmButton = {

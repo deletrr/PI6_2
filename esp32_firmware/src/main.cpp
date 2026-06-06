@@ -21,6 +21,7 @@ static unsigned long lastSensorReadMs  = 0;
 static unsigned long lastConnCheckMs   = 0;
 static unsigned long lastPublishMs     = 0;
 static unsigned long lastOledUpdateMs  = 0;
+static unsigned long lastHeartbeatMs   = 0; // Novo timer para envio periódico
 
 // ── Clientes ─────────────────────────────────────────────────────────────────
 WiFiClient   wifiClient;
@@ -99,6 +100,18 @@ void loop() {
         if (now - lastOledUpdateMs >= 500) {
             lastOledUpdateMs = now;
             updateOled(cm);
+        }
+    }
+
+    // 4. Envio periódico de status (Heartbeat a cada 5 segundos)
+    if (now - lastHeartbeatMs >= 5000) {
+        lastHeartbeatMs = now;
+        if (currentState != SpotState::UNKNOWN) {
+            Serial.println("[MQTT] Enviando status periodico...");
+            publishState(currentState);
+        } else {
+            // Se ainda não sabe o estado, envia "Livre" por padrão para registro inicial
+            publishState(SpotState::FREE);
         }
     }
 }
